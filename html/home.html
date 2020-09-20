@@ -1,0 +1,29 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+
+    <title>Vocab Builder</title>
+    <meta name="description" content="Vocab Builder">
+    <meta name="author" content="rhails">
+
+
+</head>
+
+<body>
+<form action="/submit">
+    <label for="newWords">Number of new words:</label><br>
+    <input type="text" id="newWords" name="newWords" value="100"><br>
+    <label for="learnedWords">Number of learned words:</label><br>
+    <input type="text" id="learnedWords" name="learnedWords" value="100"><br><br>
+    <label for="toughWords">Number of tough words:</label><br>
+    <input type="text" id="toughWords" name="toughWords" value="50"><br><br>
+    <label for="requiredStreak">Required streak to move on:</label><br>
+    <input type="text" id="requiredStreak" name="requiredStreak" value="2"><br><br>
+    <label for="filepath">File:</label><br>
+    <input type="text" id="filepath" name="filepath" value="vocab.json"><br><br>
+    <input type="submit" value="Submit">
+</form>
+</body>
+</html>
