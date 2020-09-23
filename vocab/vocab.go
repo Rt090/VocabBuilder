@@ -3,7 +3,6 @@ package vocab
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -14,20 +13,34 @@ import (
 )
 
 type Vocabulary struct {
-	burst        map[string]*task
-	new          []*entry
-	learned      []*entry
-	tough        []*entry
-	consolidated map[string]*entry
+	burst        map[string]*Task // holds current words
+	new          []*entry // holds remaining words in new category  (shrinks as words completed)
+	learned      []*entry // holds remaining words in learned category (shrinks as words completed)
+	tough        []*entry // holds remaining words in tough category (shrinks as words completed)
+	consolidated map[string]*entry // all words, english -> fullInfo (never removed from)
 	burstSize    int
 	successReq   int
+	wordsThisSet []string
 }
+
+const (
+	NEW WordType = iota
+	LEARNED WordType = iota
+	TOUGH WordType = iota
+)
+
+type WordType int
 
 // TODO for consolidated use a new thing besides entry, representing korean in map[string]
 
-type task struct {
-	attempts          int
-	correctSequential int
+// TODO should task be consolidated with entry?
+// this is like a per-session entry
+// entry captures lifetime
+type Task struct {
+	Attempts          int
+	CorrectSequential int
+	Kor string
+	T WordType
 }
 
 func NewVocabulary(filepath string, burstSize, success int) (*Vocabulary, error) {
@@ -109,6 +122,7 @@ func (v *Vocabulary) loadAll(entries []*entry) {
 func (v *Vocabulary) Distribute(newestCount, learnedCount, toughCount int) {
 
 	cur := []*entry{}
+	// TODO sort the other way
 	cmp := func(a, b int) bool {
 		if cur[a].LastAttempted == nil {
 			return true
@@ -144,33 +158,48 @@ func (v *Vocabulary) Distribute(newestCount, learnedCount, toughCount int) {
 		v.learned = cur
 	}
 
-}
+	fmt.Println(v.new)
 
-// TODO should this talk directly to user
-func (v *Vocabulary) Start() {
-	rand.Seed(time.Now().UnixNano())
-
-	for rem := v.loadNextBurst(); rem > 0; rem = v.loadNextBurst() {
-		err := v.completeBurst()
-		if err != nil {
-			v.WriteOut("vocab.json")
-			panic(err)
-		}
-		v.writeOutBurst()
+	// make consolidated only hold words we're doing
+	//newConsolidated := make(map[string]*entry,newestCount+learnedCount+toughCount)
+	for _, w := range v.new{
+		v.wordsThisSet = append(v.wordsThisSet,w.Eng)
 	}
+	for _, w := range v.learned{
+		v.wordsThisSet = append(v.wordsThisSet,w.Eng)
+	}
+	for _, w := range v.tough{
+		v.wordsThisSet = append(v.wordsThisSet,w.Eng)
+	}
+	//v.consolidated = newConsolidated
 }
+
+//// TODO should this talk directly to user
+//func (v *Vocabulary) Start() {
+//	rand.Seed(time.Now().UnixNano())
+//
+//	for rem := v.burst(); rem > 0; rem = v.loadNextBurst() {
+//		err := v.completeBurst()
+//		if err != nil {
+//			v.WriteOut("vocab.json")
+//			panic(err)
+//		}
+//		v.writeOutBurst()
+//	}
+//}
 
 func (v *Vocabulary) StartWeb() {
 	rand.Seed(time.Now().UnixNano())
 	v.loadNextBurst()
 }
 
-func (v *Vocabulary) NextBatch() ([]string,map[string]int,error) {
+func (v *Vocabulary) NextBatch() ([]string,error) {
+
 	ret := []string{}
-	rem := map[string]int{}
+
 	l := []string{}
 	if len(v.burst) == 0 {
-		return nil,nil, errors.New("Out of words")
+		return nil, nil
 	}
 	for eng := range v.burst {
 		l = append(l, eng)
@@ -178,7 +207,7 @@ func (v *Vocabulary) NextBatch() ([]string,map[string]int,error) {
 	rand.Shuffle(len(l), func(i, j int) { l[i], l[j] = l[j], l[i] })
 	skipped := 0
 	for _, eng := range l {
-		if v.burst[eng].correctSequential >= v.successReq {
+		if v.burst[eng].CorrectSequential >= v.successReq {
 			skipped++
 			if skipped == len(l) {
 				fmt.Println("We shouldn't be here, submission should have caught")
@@ -186,18 +215,63 @@ func (v *Vocabulary) NextBatch() ([]string,map[string]int,error) {
 			continue
 		}
 		ret = append(ret,eng)
+
 	}
-	rem["new"] = len(v.new)
-	rem["learned"] = len(v.learned)
-	rem["tough"] =  len(v.tough)
-	return ret,rem,nil
+
+	return ret,nil
+}
+
+func (v *Vocabulary) WordStats(w string) *Task {
+	stat := v.consolidated[w]
+	if len(stat.Attempts) == 0 {
+		return nil
+	}
+	t := &Task{}
+
+	t.Kor = stat.Kor
+
+	t.Attempts = stat.Attempts[len(stat.Attempts)-1].Required + stat.Attempts[len(stat.Attempts)-1].Misses
+	t.CorrectSequential = v.successReq
+	state := WordType(0)
+	switch stat.state() {
+	case STATE_NEW:
+		state = NEW
+	case STATE_LEARNED:
+		state = LEARNED
+	case STATE_TOUGH:
+		state = TOUGH
+	}
+	t.T = state
+
+
+	return t
+}
+
+func (v *Vocabulary) Remaining() (int,int,int){
+	new := len(v.new)
+	learned := len(v.learned)
+	tough := len(v.tough)
+
+	for _, task := range v.burst{
+		if task.CorrectSequential < v.successReq {
+			switch task.T {
+			case NEW:
+				new++
+			case LEARNED:
+				learned++
+			case TOUGH:
+				tough++
+			}
+		}
+	}
+	return new,learned,tough
 }
 
 func (v *Vocabulary) SubmitBatch(answers map[string]string)(map[string]bool,map[string]string){
 	correctness := map[string]bool{}
 	answerKey := map[string]string{}
 	for eng,answer := range answers {
-		v.burst[eng].attempts++
+		v.burst[eng].Attempts++
 		entry := v.consolidated[eng]
 		allAnswers := strings.Split(entry.Kor, "/")
 		correctMap := map[string]struct{}{}
@@ -206,13 +280,11 @@ func (v *Vocabulary) SubmitBatch(answers map[string]string)(map[string]bool,map[
 		}
 
 		if _, ok := correctMap[answer]; !ok {
-			v.burst[eng].correctSequential = 0
+			v.burst[eng].CorrectSequential = 0
 			correctness[eng] = false
-			//fmt.Printf("Incorrect: looking for %s\n", entry.Kor)
 		} else {
 			correctness[eng] = true
-			v.burst[eng].correctSequential++
-			//fmt.Printf("Correct! Attempts:%d, Correct in a row:%d\n", v.burst[eng].attempts, v.burst[eng].correctSequential)
+			v.burst[eng].CorrectSequential++
 		}
 		answerKey[eng] = entry.Kor
 	}
@@ -220,21 +292,43 @@ func (v *Vocabulary) SubmitBatch(answers map[string]string)(map[string]bool,map[
 	completed := 0
 
 	for _, tracking := range v.burst{
-		if tracking.correctSequential >= v.successReq {
+		if tracking.CorrectSequential >= v.successReq {
 			completed ++
 		}
 	}
 
 	// we're done
 	if completed == len(v.burst) {
-		rem := v.loadNextBurst()
-		if rem == 0{
-			fmt.Println("We're done you should exit")
-		}
+		v.writeOutBurst()
+		v.loadNextBurst()
 	}
 
 	return correctness,answerKey
 }
+// write out the
+func (v *Vocabulary) WriteOut(filepath string) error {
+	l := make([]*entry, 0, len(v.consolidated))
+	for _, e := range v.consolidated {
+		l = append(l, e)
+	}
+	j, err := json.Marshal(l)
+	if err != nil {
+		return err
+	}
+	ioutil.WriteFile(filepath, j, 0644)
+	return nil
+}
+
+func (v *Vocabulary) AllWords() []string{
+	ret := make([]string,0,len(v.wordsThisSet))
+	for _,key := range v.wordsThisSet {
+		ret =  append(ret,key)
+	}
+	return ret
+}
+
+func (v *Vocabulary) MoveToTough(w string) {}
+func (v *Vocabulary) MoveOutOfTough(w string) {}
 
 func (v *Vocabulary) completeBurst() error {
 	skipped := 0
@@ -246,7 +340,7 @@ func (v *Vocabulary) completeBurst() error {
 		rand.Shuffle(len(l), func(i, j int) { l[i], l[j] = l[j], l[i] })
 		skipped = 0
 		for _, eng := range l {
-			if v.burst[eng].correctSequential >= v.successReq {
+			if v.burst[eng].CorrectSequential >= v.successReq {
 				skipped++
 				if skipped == len(l) {
 					return nil
@@ -258,7 +352,7 @@ func (v *Vocabulary) completeBurst() error {
 			if err != nil {
 				return err
 			}
-			v.burst[eng].attempts++
+			v.burst[eng].Attempts++
 
 			// TODO should we just build this off the rip? makes entry object ugly, but what's stored shouldnt
 			// be equivalent to what is running
@@ -270,11 +364,11 @@ func (v *Vocabulary) completeBurst() error {
 			}
 
 			if _, ok := correctMap[answer]; !ok {
-				v.burst[eng].correctSequential = 0
+				v.burst[eng].CorrectSequential = 0
 				fmt.Printf("Incorrect: looking for %s\n", entry.Kor)
 			} else {
-				v.burst[eng].correctSequential++
-				fmt.Printf("Correct! Attempts:%d, Correct in a row:%d\n", v.burst[eng].attempts, v.burst[eng].correctSequential)
+				v.burst[eng].CorrectSequential++
+				fmt.Printf("Correct! Attempts:%d, Correct in a row:%d\n", v.burst[eng].Attempts, v.burst[eng].CorrectSequential)
 			}
 		}
 	}
@@ -295,25 +389,25 @@ func getAnswer(input string) (string, error) {
 func (v *Vocabulary) writeOutBurst() {
 	for eng, task := range v.burst {
 		cur := v.consolidated[eng]
-		misses := task.attempts - v.successReq
+		misses := task.Attempts - v.successReq
 		ts := time.Now()
-		attempt := &attempt{Misses: misses, Ts: &ts}
+		attempt := &attempt{Misses: misses, Ts: &ts,Required: v.successReq}
 		cur.Attempts = append(cur.Attempts, attempt)
 		cur.LastAttempted = &ts
 	}
 }
 
 func (v *Vocabulary) loadNextBurst() int {
-	b := make(map[string]*task, v.burstSize)
+	b := make(map[string]*Task, v.burstSize)
 	for i := 0; i < v.burstSize; i++ {
 		if len(v.new) > 0 {
-			b[v.new[0].Eng] = &task{}
+			b[v.new[0].Eng] = &Task{Kor:v.consolidated[v.new[0].Eng].Kor,T: NEW}
 			v.new = v.new[1:]
 		} else if len(v.learned) > 0 {
-			b[v.learned[0].Eng] = &task{}
+			b[v.learned[0].Eng] = &Task{Kor:v.consolidated[v.learned[0].Eng].Kor,T: LEARNED}
 			v.learned = v.learned[1:]
 		} else if len(v.tough) > 0 {
-			b[v.tough[0].Eng] = &task{}
+			b[v.tough[0].Eng] = &Task{Kor:v.consolidated[v.tough[0].Eng].Kor,T: TOUGH}
 			v.tough = v.tough[1:]
 		}
 	}
@@ -321,16 +415,4 @@ func (v *Vocabulary) loadNextBurst() int {
 	return len(b)
 }
 
-// write out the
-func (v *Vocabulary) WriteOut(filepath string) error {
-	l := make([]*entry, 0, len(v.consolidated))
-	for _, e := range v.consolidated {
-		l = append(l, e)
-	}
-	j, err := json.Marshal(l)
-	if err != nil {
-		return err
-	}
-	ioutil.WriteFile(filepath, j, 0644)
-	return nil
-}
+

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Rt090/VocabBuilder/vocab"
 	"golang.org/x/net/html"
+	"sort"
 
 	"io/ioutil"
 	"math/rand"
@@ -17,32 +18,13 @@ import (
 
 const (
 	burstSize = 5 // TODO should we move?
+	tooManyWrong = 3
 )
 
 // entry point, times execution
 func main() {
-	//filename,err := readEntries()
-	//if err != nil {
-	//	panic(err)
-	//}
-	//streak,err := readRequiredStreak()
-	//if err != nil {
-	//	panic(err)
-	//}
-	//v, err := vocab.NewVocabulary(filename,burstSize,streak)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//new,learned,tough,err := readGroupSizes()
-	//if err != nil {
-	//	panic(err)
-	//}
-	//v.Distribute(new,learned,tough)
-	//v.Start()
-	//v.WriteOut("vocab.json")
 
 	v := &vocab.Vocabulary{}
-
 	http.HandleFunc("/home",func(w http.ResponseWriter,r *http.Request){
 		f, err := os.Open("./html/home.html")
 		if err != nil {
@@ -99,10 +81,11 @@ func main() {
 		rand.Seed(time.Now().UnixNano())
 
 		v.StartWeb()
-		words,rem,err := v.NextBatch()
+		words,err := v.NextBatch()
 
-		fmt.Println("rem",rem)
-		addRem(doc,rem)
+		new,learned,tough := v.Remaining()
+
+		addRem(doc,new,learned,tough)
 		addForm(doc,words)
 
 
@@ -116,6 +99,26 @@ func main() {
 			panic(err)
 		}
 
+	})
+
+	http.HandleFunc("/star",func(w http.ResponseWriter,r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			panic(err)
+		}
+		for _,val := range r.Form{
+			v.MoveToTough(val[0])
+		}
+		w.WriteHeader(200)
+	})
+
+	http.HandleFunc("/unstar",func(w http.ResponseWriter,r *http.Request){
+		if err := r.ParseForm(); err != nil {
+			panic(err)
+		}
+		for _,val := range r.Form {
+			v.MoveOutOfTough(val[0])
+		}
+			w.WriteHeader(200)
 	})
 
 	http.HandleFunc("/run",func(w http.ResponseWriter,r *http.Request){
@@ -141,12 +144,44 @@ func main() {
 		}
 
 		addFeedback(doc,correct,answerKey)
-		words,rem,err := v.NextBatch()
+		words,err := v.NextBatch()
 		if err != nil {
-			panic(err) // really we are just done
+			panic(err)
+		}
+		new,learned,tough := v.Remaining()
+
+		if new+learned+tough == 0 {
+			fmt.Println("All done -- closing out")
+			err = v.WriteOut("./vocab.json")
+			if err != nil {
+				panic(err)
+			}
+			done, err := os.Open("./html/end.html")
+			if err != nil {
+				panic(err)
+			}
+			defer done.Close()
+			doneDoc, err := html.Parse(done)
+			if err != nil {
+				panic(err)
+			}
+
+			words := v.AllWords()
+
+			fmt.Println("Got all the words",len(words))
+
+			m := allStats(v,words)
+
+			addStats(doneDoc,m)
+
+			err = html.Render(w,doneDoc)
+			if err != nil {
+				panic(err)
+			}
+			return
 		}
 		addForm(doc,words)
-		addRem(doc,rem)
+		addRem(doc,new,learned,tough)
 		if err = html.Render(w,doc); err != nil {
 			panic(err)
 		}
@@ -156,7 +191,67 @@ func main() {
 
 }
 
-func addRem(n *html.Node,rem map[string]int) {
+func allStats(v *vocab.Vocabulary,words []string) map[string]*vocab.Task{
+	m := make(map[string]*vocab.Task,len(words))
+	for _, word := range words {
+		m[word] = v.WordStats(word)
+		fmt.Println(word,m[word])
+	}
+	return m
+}
+
+func addStats(n *html.Node,stats map[string]*vocab.Task) {
+	type sorter struct {
+		eng string
+		attempt int
+	}
+	sl := make([]*sorter,0,len(stats))
+	for word, stat := range stats {
+		sl = append(sl,&sorter{eng:word,attempt: stat.Attempts})
+	}
+
+	sort.Slice(sl,func(i,j int)bool {
+		return sl[j].attempt < sl[i].attempt
+	})
+
+	ul := findByID(n,"info")
+	for _,s := range sl {
+		li := &html.Node{}
+		li.Type = 3
+		li.Data = "li"
+		li.Attr = []html.Attribute{html.Attribute{Key: "id",Val: s.eng}}
+
+		text := &html.Node{}
+		text.Type = 1
+		text.Data = fmt.Sprintf("%s: %s",s.eng,stats[s.eng].Kor)
+
+		text2 := &html.Node{}
+		text2.Type = 1
+		text2.Data = fmt.Sprintf("Attempts:%d",s.attempt)
+		if s.attempt >= tooManyWrong {
+			text2.Attr = []html.Attribute{html.Attribute{Key:"class",Val: "failed"}}
+		}
+
+		star := &html.Node{}
+		star.Type = 3
+		star.Data = "button"
+		star.Attr = []html.Attribute{html.Attribute{Key:"onClick",Val: "star(this)"},{Key:"class",Val:"star"}}
+
+		img := &html.Node{}
+		img.Type = 3
+		img.Data = "img"
+		img.Attr = []html.Attribute{html.Attribute{Key:"src",Val: "http://imgur.com/I0EwG.png"}}
+
+		li.AppendChild(text)
+		li.AppendChild(text2)
+		star.AppendChild(img)
+		li.AppendChild(star)
+
+		ul.AppendChild(li)
+	}
+}
+
+func addRem(n *html.Node,newCount,learnedCount,toughCount int) {
 	new := findByID(n,"newRem")
 	learned := findByID(n,"learnedRem")
 	tough := findByID(n,"toughRem")
@@ -173,19 +268,19 @@ func addRem(n *html.Node,rem map[string]int) {
 
 	text := &html.Node{}
 	text.Type = 1
-	text.Data = "New Remaining: " + strconv.Itoa(rem["new"])
+	text.Data = "New Remaining: " + strconv.Itoa(newCount)
 
 	new.AppendChild(text)
 
 	text = &html.Node{}
 	text.Type = 1
-	text.Data = "Learned Remaining: " + strconv.Itoa(rem["learned"])
+	text.Data = "Learned Remaining: " + strconv.Itoa(learnedCount)
 
 	learned.AppendChild(text)
 
 	text = &html.Node{}
 	text.Type = 1
-	text.Data = "Tough Remaining: " + strconv.Itoa(rem["tough"])
+	text.Data = "Tough Remaining: " + strconv.Itoa(toughCount)
 
 	tough.AppendChild(text)
 
@@ -253,6 +348,20 @@ func appendBr(node *html.Node,n int) {
 
  func addForm (n *html.Node, words []string)  {
 	i := 0
+
+	labels := &html.Node{}
+	labels.Attr = []html.Attribute{html.Attribute{Key:"name",Val:"labels"},html.Attribute{Key:"id",Val: "labels"},html.Attribute{Key:"class",Val: "formDiv"}}
+	labels.Data = "div"
+	labels.Type = 3
+	inputs := &html.Node{}
+	inputs.Attr = []html.Attribute{html.Attribute{Key:"name",Val:"inputs"},html.Attribute{Key:"id",Val: "inputs"},html.Attribute{Key:"class",Val: "formDiv"}}
+	inputs.Data = "div"
+	inputs.Type = 3
+	buttons := &html.Node{}
+	buttons.Attr = []html.Attribute{html.Attribute{Key:"name",Val:"buttons"},html.Attribute{Key:"id",Val: "buttons"},html.Attribute{Key:"class",Val: "formDiv"}}
+	buttons.Data = "div"
+	buttons.Type = 3
+
 	for _, attr := range n.Attr {
 		if attr.Key == "id" && attr.Val == "vocabList" {
 			for _, word := range words {
@@ -273,25 +382,23 @@ func appendBr(node *html.Node,n int) {
 				text.Data = word
 				label.AppendChild(text)
 
-				br := &html.Node{}
-				br.Type = 3
-				br.Data = "br"
 
-				n.AppendChild(label)
-				n.AppendChild(input)
-				n.AppendChild(br)
+
+				labels.AppendChild(label)
+				inputs.AppendChild(input)
 
 				i++
 			}
-			br := &html.Node{}
-			br.Type = 3
-			br.Data = "br"
-			n.AppendChild(br)
+
+
 			submit := &html.Node{}
-			submit.Attr = []html.Attribute{html.Attribute{Key:"type",Val:"submit"},html.Attribute{Key:"value",Val: "Submit"}}
+			submit.Attr = []html.Attribute{html.Attribute{Key:"type",Val:"submit"},html.Attribute{Key:"value",Val: "Submit"},html.Attribute{Key:"class",Val:"submitForm"}}
 			submit.Data = "input"
 			submit.Type = 3
-			n.AppendChild(submit)
+			buttons.AppendChild(submit)
+			n.AppendChild(labels)
+			n.AppendChild(inputs)
+			n.AppendChild(buttons)
 			return
 		}
 	}

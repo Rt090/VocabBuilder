@@ -9,31 +9,70 @@
     <meta name="author" content="rhails">
 
 <style>
+    element.style{
+        /*background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAfBJREFUWAntVk1OwkAUZkoDKza4Utm61iP0AqyIDXahN2BjwiHYGU+gizap4QDuegWN7lyCbMSlCQjU7yO0TOlAi6GwgJc0fT/fzPfmzet0crmD7HsFBAvQbrcrw+Gw5fu+AfOYvgylJ4TwCoVCs1ardYTruqfj8fgV5OUMSVVT93VdP9dAzpVvm5wJHZFbg2LQ2pEYOlZ/oiDvwNcsFoseY4PBwMCrhaeCJyKWZU37KOJcYdi27QdhcuuBIb073BvTNL8ln4NeeR6NRi/wxZKQcGurQs5oNhqLshzVTMBewW/LMU3TTNlO0ieTiStjYhUIyi6DAp0xbEdgTt+LE0aCKQw24U4llsCs4ZRJrYopB6RwqnpA1YQ5NGFZ1YQ41Z5S8IQQdP5laEBRJcD4Vj5DEsW2gE6s6g3d/YP/g+BDnT7GNi2qCjTwGd6riBzHaaCEd3Js01vwCPIbmWBRx1nwAN/1ov+/drgFWIlfKpVukyYihtgkXNp4mABK+1GtVr+SBhJDbBIubVw+Cd/TDgKO2DPiN3YUo6y/nDCNEIsqTKH1en2tcwA9FKEItyDi3aIh8Gl1sRrVnSDzNFDJT1bAy5xpOYGn5fP5JuL95ZjMIn1ya7j5dPGfv0A5eAnpZUY3n5jXcoec5J67D9q+VuAPM47D3XaSeL4AAAAASUVORK5CYII=);*/
+        background-repeat: no-repeat;
+        background-attachment: scroll;
+        background-size: 16px 18px;
+        background-position: 98% 50%;
+        cursor: auto;
+    }
+    body{
+        font-family: "Lucida Grande";
+    }
     label{
-    display: inline-block;
-    float: left;
-    clear: left;
-    width: 250px;
-    text-align: left;
+        display: inline-block;
+        float: left;
+        clear: both;
+        /*width: 75px;*/
+        height: 25px;
+        padding-top: 3px;
+        padding-bottom: 3px;
+        text-align: left;
     }
     input {
-    display: inline-block;
-    float: left;
+        float: left;
+        clear: both;
+        height: 25px;
+        width: 300px;
+        display: inline-block;
     }
+    .submitForm{
+        background-color: #3b5998;
+        color: white;
+        display: block;
+        clear: left;
+        margin-top: 25px;
+        margin-left: 75px;
+    }
+    #remaining{
+        display: inline-block;
+    }
+    #instructions{
+        padding-left: 5px;
+        padding-bottom: 10px;
+        text-decoration: underline;
+    }
+    #buttons{
+        display: table;
+    }
+    .formDiv{
+        display: inline-block;
+        padding-left: 5px;
+    }
+
+
 </style>
 
 </head>
 
 <body>
-
-
-<ul id="remaining">
-    <li id="newRem"></li>
-    <li id="learnedRem"></li>
-    <li id="toughRem"></li>
-</ul>
-Enter Korean for the following English <br /><br />
-<form id='vocabList' action="/run">
-</form>
+    <div id="instructions">Enter Korean for the following English</div>
+    <form id='vocabList' action="/run" > </form>
+    <ul id="remaining">
+        <li id="newRem"></li>
+        <li id="learnedRem"></li>
+        <li id="toughRem"></li>
+    </ul>
 </body>
 </html>

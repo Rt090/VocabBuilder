@@ -29,6 +29,7 @@ type mastered struct{
 type attempt struct{
 	Ts *time.Time `json:"ts"`
 	Misses int `json:"misses"`
+	Required int `json:"required"`
 }
 
 func (e *entry) state() int{

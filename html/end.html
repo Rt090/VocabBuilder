@@ -1,0 +1,49 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+
+    <title>Vocab Builder</title>
+    <meta name="description" content="Vocab Builder">
+    <meta name="author" content="rhails">
+
+    <style>
+        #info{
+            padding-left: 5px;
+            padding-bottom: 10px;
+            text-decoration: underline;
+        }
+        .star{
+            border: none;
+            margin: 0;
+            padding: 0;
+            background: transparent;
+        }
+    </style>
+
+    <script>
+        function star(ele) {
+            var value = ele.parentElement.id;
+            console.log("I am the star child of ")
+            const Http = new XMLHttpRequest();
+            key = encodeURIComponent("id");
+            value = encodeURIComponent(value);
+            const url='http://localhost:8080/star?'+[key,value].join('=');
+            console.log(url)
+            Http.open("GET", url);
+            Http.send();
+
+            Http.onreadystatechange = (e) => {
+                console.log(Http.responseText)
+            }
+        }
+    </script>
+
+</head>
+
+<body>
+<div id="info">All Words Completed!</div>
+<ul id="stats"/>
+</body>
+</html>
