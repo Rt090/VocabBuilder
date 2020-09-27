@@ -39,6 +39,7 @@
     }
     .submitForm{
         background-color: #3b5998;
+        padding-left: 5px;
         color: white;
         display: block;
         clear: left;
@@ -53,22 +54,119 @@
         padding-bottom: 10px;
         text-decoration: underline;
     }
-    #buttons{
+    .formButton{
         display: table;
+        padding-left: 5px;
     }
     .formDiv{
+        display: inline-block;
+        padding-left: 5px;
+    }
+    .fixButton{
+        display: inline-block;
+        background-color: #3b5998;
+        padding-left: 5px;
+        margin-left: 25px;
+        color: white;
+        width: 100px;
+        height: 31px;
+    }
+    .correctIn{
+        height: 25px;
+        width: 300px;
+        display: inline-block;
+        float:none;
+        clear:none;
+    }
+    #burstStat{
+        display: inline-block;
+    }
+    #burstStat > li{
+        height: 31px;
+    }
+    #burstFixButtons{
         display: inline-block;
         padding-left: 5px;
     }
 
 
 </style>
+<script>
+
+    fixIt = function(elem) {
+        console.log(elem.id)
+        parent = elem.parentElement
+        // build an input form for english and korean
+        // send parse out the original english from the button name
+        // send the new stuff to backend
+        var eng = document.createElement("input");
+        eng.setAttribute("type","text")
+        eng.setAttribute("placeholder","Correct English")
+        eng.setAttribute("class","correctIn")
+        var kor = document.createElement("input")
+        kor.setAttribute("type","text")
+        kor.setAttribute("placeholder","Correct Korean")
+        kor.setAttribute("class","correctIn")
+        var submit = document.createElement("button")
+        submit.innerHTML = "Fix"
+        submit.setAttribute("class","fixButton")
+        submit.addEventListener('click', function(){
+            console.log(eng.value)
+            console.log(kor.value)
+            engWord = elem.id.split("&")[0]
+            console.log(engWord)
+            // This should almost certainly be done idempotently by affecting backend and reloading
+            // rather than directly changing...
+            label = document.getElementById(engWord+"&label")
+            input = document.getElementById(engWord+"&input")
+            label.innerHTML = eng.value
+            input.setAttribute("name",eng.value)
+            input.setAttribute("id",eng.value+"&input")
+            label.setAttribute("id",eng.value+"&label")
+
+            qOrig = "orig="+engWord
+            qEng = "eng="+eng.value
+            qKor = "kor="+kor.value
+
+            const Http = new XMLHttpRequest();
+            const url='http://localhost:8080/fix?'+[qOrig,qEng,qKor].join('&');
+            console.log(url)
+            Http.open("GET", url);
+            Http.send();
+
+            console.log(elem.id)
+            parent.removeChild(eng)
+            parent.removeChild(kor)
+            parent.removeChild(submit)
+
+            orig = document.createElement("button")
+            orig.setAttribute("onclick","fixIt(this)")
+            orig.setAttribute("id",eng.value+"&fix")
+            orig.setAttribute("class","fixButton")
+            orig.innerHTML = "Fix this entry"
+            // orig.setAttribute("value","Fix this entry")
+            parent.appendChild(orig)
+            parent.innerHTML = eng.value+":"+"Fixed"
+        });
+        parent.appendChild(eng)
+        parent.appendChild(kor)
+        parent.appendChild(submit)
+        parent.removeChild(elem)
+    }
+
+</script>
+
 
 </head>
 
 <body>
     <div id="instructions">Enter Korean for the following English</div>
-    <form id='vocabList' action="/run" > </form>
+    <form id='vocabList' action="/run" autocomplete="off"> </form>
+    <form action="http://localhost:8080/exit">
+        <div class="formButton">
+            <input type="submit" value="Exit" class="submitForm"/>
+        </div>
+    </form>
     <ul id="remaining">
         <li id="newRem"></li>
         <li id="learnedRem"></li>

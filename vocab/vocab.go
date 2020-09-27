@@ -20,7 +20,7 @@ type Vocabulary struct {
 	consolidated map[string]*entry // all words, english -> fullInfo (never removed from)
 	burstSize    int
 	successReq   int
-	wordsThisSet []string
+	wordsThisSet map[string]struct{}
 }
 
 const (
@@ -72,10 +72,12 @@ func (v *Vocabulary) loadAll(entries []*entry) {
 	all := make(map[string]*entry, len(entries))
 
 	for _, e := range entries {
-		if _, ok := all[e.Eng]; !ok {
-			all[e.Eng] = e
+		eng := strings.TrimSpace(e.Eng)
+		eng = strings.Replace(eng,".","",-1)
+		if _, ok := all[eng]; !ok {
+			all[eng] = e
 		} else {
-			k1 := all[e.Eng].Kor
+			k1 := all[eng].Kor
 			k2 := e.Kor
 
 			if k1 != k2 {
@@ -88,7 +90,8 @@ func (v *Vocabulary) loadAll(entries []*entry) {
 				}
 				k1 = strings.Join([]string{k1, k2}, "/")
 			}
-			all[e.Eng].Kor = k1
+			k1 = strings.Replace(k1,".","",-1)
+			all[eng].Kor = k1
 		}
 	}
 	v.consolidated = all
@@ -158,18 +161,18 @@ func (v *Vocabulary) Distribute(newestCount, learnedCount, toughCount int) {
 		v.learned = cur
 	}
 
-	fmt.Println(v.new)
+	v.wordsThisSet = make(map[string]struct{},len(v.new) + len(v.learned) + len(v.tough))
 
 	// make consolidated only hold words we're doing
 	//newConsolidated := make(map[string]*entry,newestCount+learnedCount+toughCount)
 	for _, w := range v.new{
-		v.wordsThisSet = append(v.wordsThisSet,w.Eng)
+		v.wordsThisSet[w.Eng] = struct{}{}
 	}
 	for _, w := range v.learned{
-		v.wordsThisSet = append(v.wordsThisSet,w.Eng)
+		v.wordsThisSet[w.Eng] = struct{}{}
 	}
 	for _, w := range v.tough{
-		v.wordsThisSet = append(v.wordsThisSet,w.Eng)
+		v.wordsThisSet[w.Eng] = struct{}{}
 	}
 	//v.consolidated = newConsolidated
 }
@@ -223,14 +226,16 @@ func (v *Vocabulary) NextBatch() ([]string,error) {
 
 func (v *Vocabulary) WordStats(w string) *Task {
 	stat := v.consolidated[w]
-	if len(stat.Attempts) == 0 {
-		return nil
-	}
 	t := &Task{}
+	if stat == nil {
+		fmt.Println("Why is there no task for this word?",w)
+	}
+	if len(stat.Attempts) > 0 {
+		t.Attempts = stat.Attempts[len(stat.Attempts)-1].Required + stat.Attempts[len(stat.Attempts)-1].Misses
+	}
 
 	t.Kor = stat.Kor
 
-	t.Attempts = stat.Attempts[len(stat.Attempts)-1].Required + stat.Attempts[len(stat.Attempts)-1].Misses
 	t.CorrectSequential = v.successReq
 	state := WordType(0)
 	switch stat.state() {
@@ -270,7 +275,9 @@ func (v *Vocabulary) Remaining() (int,int,int){
 func (v *Vocabulary) SubmitBatch(answers map[string]string)(map[string]bool,map[string]string){
 	correctness := map[string]bool{}
 	answerKey := map[string]string{}
+
 	for eng,answer := range answers {
+		fmt.Println(eng)
 		v.burst[eng].Attempts++
 		entry := v.consolidated[eng]
 		allAnswers := strings.Split(entry.Kor, "/")
@@ -321,14 +328,35 @@ func (v *Vocabulary) WriteOut(filepath string) error {
 
 func (v *Vocabulary) AllWords() []string{
 	ret := make([]string,0,len(v.wordsThisSet))
-	for _,key := range v.wordsThisSet {
+	for key := range v.wordsThisSet {
 		ret =  append(ret,key)
 	}
 	return ret
 }
 
-func (v *Vocabulary) MoveToTough(w string) {}
-func (v *Vocabulary) MoveOutOfTough(w string) {}
+func (v *Vocabulary) IngestCorrection(key,eng,kor string){
+	entry := v.consolidated[key]
+	if entry == nil {
+		panic("Can't find correct " + key)
+	}
+	entry.Eng = eng
+	entry.Kor = kor
+	entry.Attempts = []*attempt{}
+	entry.Remedial = nil
+	entry.Mastered = nil
+	v.consolidated[eng] = entry
+
+
+	// TODO consolidate this into newTask for entry w/ loadNextBurst
+	v.burst[eng] = &Task{Kor:kor,T: NEW}
+
+	if key != eng {
+		delete(v.consolidated,key)
+		delete(v.burst,key)
+		delete(v.wordsThisSet,key)
+	}
+
+}
 
 func (v *Vocabulary) completeBurst() error {
 	skipped := 0
@@ -414,5 +442,7 @@ func (v *Vocabulary) loadNextBurst() int {
 	v.burst = b
 	return len(b)
 }
-
-
+// care the case of multiple
+func (v *Vocabulary) swapWord(oldEng,newEng,oldKor,newKor string){}
+func (v *Vocabulary) MoveToTough(w string) {}
+func (v *Vocabulary) MoveOutOfTough(w string) {}

@@ -19,7 +19,15 @@ import (
 const (
 	burstSize = 5 // TODO should we move?
 	tooManyWrong = 3
+	vocabFile = "./vocab.json"
 )
+
+// TODO: Feature List
+
+// correct words inline (both korean and english)
+// move to and from tough
+// consolidate english?
+// change star pictures
 
 // entry point, times execution
 func main() {
@@ -121,6 +129,37 @@ func main() {
 			w.WriteHeader(200)
 	})
 
+	http.HandleFunc("/exit",func(w http.ResponseWriter,r *http.Request){
+		fmt.Println("exiting early")
+		err := v.WriteOut(vocabFile)
+		if err != nil {
+			panic(err)
+		}
+		done, err := os.Open("./html/end.html")
+		if err != nil {
+			panic(err)
+		}
+		defer done.Close()
+		doneDoc, err := html.Parse(done)
+		if err != nil {
+			panic(err)
+		}
+
+		words := v.AllWords()
+
+		fmt.Println("Got all the words",len(words))
+
+		m := allStats(v,words)
+
+		addStats(doneDoc,m)
+
+		err = html.Render(w,doneDoc)
+		if err != nil {
+			panic(err)
+		}
+		//os.Exit(0)
+	})
+
 	http.HandleFunc("/run",func(w http.ResponseWriter,r *http.Request){
 
 		if err := r.ParseForm(); err != nil {
@@ -128,7 +167,7 @@ func main() {
 		}
 		checkMap := map[string]string{}
 		for k, v := range r.Form{
-			checkMap[k] = v[0]
+			checkMap[k] = strings.TrimSpace(v[0])
 		}
 		correct,answerKey := v.SubmitBatch(checkMap)
 
@@ -152,7 +191,7 @@ func main() {
 
 		if new+learned+tough == 0 {
 			fmt.Println("All done -- closing out")
-			err = v.WriteOut("./vocab.json")
+			err = v.WriteOut(vocabFile)
 			if err != nil {
 				panic(err)
 			}
@@ -178,7 +217,7 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			return
+			//os.Exit(0)
 		}
 		addForm(doc,words)
 		addRem(doc,new,learned,tough)
@@ -187,15 +226,27 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("/fix",func(w http.ResponseWriter,r *http.Request){
+		if err := r.ParseForm(); err != nil {
+			panic(err)
+		}
+		checkMap := map[string]string{}
+		for k, v := range r.Form{
+			checkMap[k] = strings.TrimSpace(v[0])
+		}
+		v.IngestCorrection(checkMap["orig"],checkMap["eng"],checkMap["kor"])
+	})
+
 	http.ListenAndServe(":8080",nil)
 
 }
+
 
 func allStats(v *vocab.Vocabulary,words []string) map[string]*vocab.Task{
 	m := make(map[string]*vocab.Task,len(words))
 	for _, word := range words {
 		m[word] = v.WordStats(word)
-		fmt.Println(word,m[word])
+		fmt.Println("all stats",word,m[word])
 	}
 	return m
 }
@@ -206,6 +257,7 @@ func addStats(n *html.Node,stats map[string]*vocab.Task) {
 		attempt int
 	}
 	sl := make([]*sorter,0,len(stats))
+	fmt.Println("appending",len(stats),"stats")
 	for word, stat := range stats {
 		sl = append(sl,&sorter{eng:word,attempt: stat.Attempts})
 	}
@@ -214,7 +266,7 @@ func addStats(n *html.Node,stats map[string]*vocab.Task) {
 		return sl[j].attempt < sl[i].attempt
 	})
 
-	ul := findByID(n,"info")
+	ul := findByID(n,"stats")
 	for _,s := range sl {
 		li := &html.Node{}
 		li.Type = 3
@@ -310,6 +362,12 @@ func addFeedback(n *html.Node, correct map[string]bool,answerKey map[string]stri
 		ul := &html.Node{}
 		ul.Type = 3
 		ul.Data = "ul"
+		ul.Attr = []html.Attribute{{Key:"id",Val:"burstStat"}}
+
+		fixButtons := &html.Node{}
+		fixButtons.Type = 3
+		fixButtons.Data = "div"
+		fixButtons.Attr = []html.Attribute{{Key:"id",Val:"burstFixButtons"}}
 
 		for word,correct := range correct {
 			li := &html.Node{}
@@ -323,7 +381,29 @@ func addFeedback(n *html.Node, correct map[string]bool,answerKey map[string]stri
 			}else {
 				text.Data += fmt.Sprintf("Wrong! Wanted:%s",answerKey[word])
 			}
+
+
+			buttonCont := &html.Node{}
+			buttonCont.Type = 3
+			buttonCont.Data = "div"
+
+			fixButton := &html.Node{}
+			fixButton.Type = 3
+			fixButton.Data = "button"
+			// TODO make the id word+fix and split on frontend?
+			fixButton.Attr = []html.Attribute{html.Attribute{Key: "onClick",Val: "fixIt(this)"},{Key:"id",Val:word+"&fix"},{Key:"class",Val: "fixButton"}}
+
+			fixText := &html.Node{}
+			fixText.Type = 1
+			fixText.Data = "Fix this entry"
+
+
+			fixButton.AppendChild(fixText)
 			li.AppendChild(text)
+
+			buttonCont.AppendChild(fixButton)
+			fixButtons.AppendChild(buttonCont)
+
 			ul.AppendChild(li)
 		}
 
@@ -331,6 +411,7 @@ func addFeedback(n *html.Node, correct map[string]bool,answerKey map[string]stri
 		appendBr(n,2)
 
 		n.AppendChild(ul)
+		n.AppendChild(fixButtons)
 	}
 	for at := n.FirstChild; at != nil; at = at.NextSibling {
 		addFeedback(at,correct,answerKey)
@@ -358,7 +439,7 @@ func appendBr(node *html.Node,n int) {
 	inputs.Data = "div"
 	inputs.Type = 3
 	buttons := &html.Node{}
-	buttons.Attr = []html.Attribute{html.Attribute{Key:"name",Val:"buttons"},html.Attribute{Key:"id",Val: "buttons"},html.Attribute{Key:"class",Val: "formDiv"}}
+	buttons.Attr = []html.Attribute{html.Attribute{Key:"name",Val:"buttons"},html.Attribute{Key:"id",Val: "buttons"},html.Attribute{Key:"class",Val: "formButton"}}
 	buttons.Data = "div"
 	buttons.Type = 3
 
@@ -367,7 +448,7 @@ func appendBr(node *html.Node,n int) {
 			for _, word := range words {
 				input := &html.Node{}
 				// TODO: potential bug if we have the same word twice, shouldn't happen but is assumed unique here
-				input.Attr = []html.Attribute{html.Attribute{Key:"name",Val:word},html.Attribute{Key:"type",Val: "text"}}
+				input.Attr = []html.Attribute{html.Attribute{Key:"name",Val:word},html.Attribute{Key:"type",Val: "text"},html.Attribute{Key:"id",Val:word+"&input"}}
 				input.Data = "input"
 				input.Type = 3
 
@@ -375,7 +456,7 @@ func appendBr(node *html.Node,n int) {
 				label := &html.Node{}
 				label.Type = 3
 				label.Data = "label"
-				label.Attr = []html.Attribute{html.Attribute{Key: "for",Val:"word " + strconv.Itoa(i)}}
+				label.Attr = []html.Attribute{html.Attribute{Key: "for",Val:"word " + strconv.Itoa(i)},{Key:"id",Val:word+"&label"}}
 
 				text := &html.Node{}
 				text.Type = 1
