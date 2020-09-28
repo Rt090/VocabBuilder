@@ -20,6 +20,10 @@
             padding: 0;
             background: transparent;
         }
+        .starImg{
+            height: 25px;
+            width: 25px;
+        }
     </style>
 
     <script>
@@ -35,8 +39,48 @@
             Http.send();
 
             Http.onreadystatechange = (e) => {
-                console.log(Http.responseText)
+                if (Http.status == 200) {
+                    var i;
+                    console.log(ele.children.length)
+                    for (i = 0; i < ele.children.length;i++){
+                        cur = ele.childNodes[i]
+                        console.log(cur.id)
+                        cur.setAttribute("src","http://imgur.com/I0EwG.png")
+                        break
+                    }
+                    ele.onclick = function() {
+                        unStar(ele);
+                    }
+                }
             }
+        }
+        function unStar(ele) {
+            var value = ele.parentElement.id;
+            console.log("I am the unstar child of ")
+            const Http = new XMLHttpRequest();
+            key = encodeURIComponent("id");
+            value = encodeURIComponent(value);
+            const url='http://localhost:8080/unstar?'+[key,value].join('=');
+            console.log(url)
+            Http.open("GET", url);
+            Http.send();
+
+
+                Http.onreadystatechange = (e) => {
+                    if (Http.status == 200) {
+                        var i;
+                        for (i = 0; i < ele.children.length;i++){
+                            console.log(i)
+                            cur = ele.childNodes[i]
+                            console.log(cur.id)
+                            cur.setAttribute("src","https://pngimg.com/uploads/star/star_PNG41515.png")
+                        }
+                        ele.onclick = function() {
+                            star(ele);
+                        }
+                    }
+                }
+
         }
     </script>
 
@@ -45,5 +89,8 @@
 <body>
 <div id="info">All Words Completed!</div>
 <ol id="stats"/>
+<form action="/close">
+    <input type="submit" value="Exit" class="submitForm">
+</form>
 </body>
 </html>

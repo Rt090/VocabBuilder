@@ -358,6 +358,17 @@ func (v *Vocabulary) IngestCorrection(key,eng,kor string){
 
 }
 
+// TODO check that word exists
+func (v *Vocabulary) IsTough(w string) bool {
+	if v.consolidated[w].Remedial == nil {
+		return false
+	}
+	if !v.consolidated[w].Remedial.InProgress {
+		return false
+	}
+	return true
+}
+
 func (v *Vocabulary) completeBurst() error {
 	skipped := 0
 	for skipped < v.burstSize {
@@ -444,5 +455,15 @@ func (v *Vocabulary) loadNextBurst() int {
 }
 // care the case of multiple
 func (v *Vocabulary) swapWord(oldEng,newEng,oldKor,newKor string){}
-func (v *Vocabulary) MoveToTough(w string) {}
-func (v *Vocabulary) MoveOutOfTough(w string) {}
+func (v *Vocabulary) MoveToTough(w string) {
+	entry := v.consolidated[w]
+	if entry.Remedial == nil {
+		entry.Remedial = &remedial{InProgress: true}
+	}
+}
+func (v *Vocabulary) MoveOutOfTough(w string) {
+	entry := v.consolidated[w]
+	if entry.Remedial != nil {
+		entry.Remedial.InProgress = false
+	}
+}

@@ -33,14 +33,14 @@ type attempt struct{
 }
 
 func (e *entry) state() int{
+	if e.Remedial != nil && e.Remedial.InProgress {
+		return STATE_TOUGH
+	}
 	if len(e.Attempts) < 7 {
 		return STATE_NEW
 	}
 	if e.Mastered != nil && len(e.Mastered.Added) != len(e.Mastered.Removed) {
 		return STATE_MASTERED
-	}
-	if e.Remedial != nil && e.Remedial.InProgress {
-		return STATE_TOUGH
 	}
 	return STATE_LEARNED
 }

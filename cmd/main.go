@@ -31,8 +31,14 @@ const (
 
 // entry point, times execution
 func main() {
-
+	leave := make(chan int)
+	go func() {
+		<- leave
+		time.Sleep(5 * time.Second)
+		os.Exit(1)
+	}()
 	v := &vocab.Vocabulary{}
+	defer v.WriteOut(vocabFile) // does this work for segfault, or ctrl+c?
 	http.HandleFunc("/home",func(w http.ResponseWriter,r *http.Request){
 		f, err := os.Open("./html/home.html")
 		if err != nil {
@@ -114,6 +120,7 @@ func main() {
 			panic(err)
 		}
 		for _,val := range r.Form{
+			fmt.Println("setting",val[0],"to tough")
 			v.MoveToTough(val[0])
 		}
 		w.WriteHeader(200)
@@ -124,6 +131,7 @@ func main() {
 			panic(err)
 		}
 		for _,val := range r.Form {
+			fmt.Println("setting",val[0],"out of tough")
 			v.MoveOutOfTough(val[0])
 		}
 			w.WriteHeader(200)
@@ -131,10 +139,7 @@ func main() {
 
 	http.HandleFunc("/exit",func(w http.ResponseWriter,r *http.Request){
 		fmt.Println("exiting early")
-		err := v.WriteOut(vocabFile)
-		if err != nil {
-			panic(err)
-		}
+
 		done, err := os.Open("./html/end.html")
 		if err != nil {
 			panic(err)
@@ -157,7 +162,28 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		//os.Exit(0)
+	})
+
+	http.HandleFunc("/close",func(w http.ResponseWriter, r *http.Request){
+		fmt.Println("Closing")
+		err := v.WriteOut(vocabFile)
+		if err != nil {
+			panic(err)
+		}
+		done, err := os.Open("./html/bye.html")
+		if err != nil {
+			panic(err)
+		}
+		defer done.Close()
+		doneDoc, err := html.Parse(done)
+		if err != nil {
+			panic(err)
+		}
+		err = html.Render(w,doneDoc)
+		if err != nil {
+			panic(err)
+		}
+		leave <- 1
 	})
 
 	http.HandleFunc("/run",func(w http.ResponseWriter,r *http.Request){
@@ -284,15 +310,33 @@ func addStats(n *html.Node,stats map[string]*vocab.Task) {
 			text2.Attr = []html.Attribute{html.Attribute{Key:"class",Val: "failed"}}
 		}
 
-		star := &html.Node{}
-		star.Type = 3
-		star.Data = "button"
-		star.Attr = []html.Attribute{html.Attribute{Key:"onClick",Val: "star(this)"},{Key:"class",Val:"star"}}
+		var star *html.Node
+		var img *html.Node
+		if stats[s.eng].T == vocab.TOUGH {
+			star = &html.Node{}
+			star.Type = 3
+			star.Data = "button"
+			star.Attr = []html.Attribute{html.Attribute{Key:"onClick",Val: "unStar(this)"},{Key:"class",Val:"star"}}
 
-		img := &html.Node{}
-		img.Type = 3
-		img.Data = "img"
-		img.Attr = []html.Attribute{html.Attribute{Key:"src",Val: "http://imgur.com/I0EwG.png"}}
+			img = &html.Node{}
+			img.Type = 3
+			img.Data = "img"
+			// gold
+			img.Attr = []html.Attribute{html.Attribute{Key:"src",Val: "http://imgur.com/I0EwG.png"},{Key:"class",Val:"starImg"}}
+		}else {
+			star = &html.Node{}
+			star.Type = 3
+			star.Data = "button"
+			star.Attr = []html.Attribute{html.Attribute{Key:"onClick",Val: "star(this)"},{Key:"class",Val:"star"}}
+
+			img = &html.Node{}
+			img.Type = 3
+			img.Data = "img"
+			//gray
+			img.Attr = []html.Attribute{html.Attribute{Key:"src",Val: "https://pngimg.com/uploads/star/star_PNG41515.png"},{Key:"class",Val:"starImg"}}
+		}
+
+
 
 		li.AppendChild(text)
 		li.AppendChild(text2)
